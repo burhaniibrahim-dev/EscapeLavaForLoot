@@ -1,1 +1,7 @@
 std = "roblox"
+exclude = [
+  "Packages/*",
+  "ServerPackages/*",
+  "src/ReplicatedStorage/Shared/Networker/Client.luau",
+  "src/ServerScriptService/Networker/Server.luau",
+]

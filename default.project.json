@@ -30,7 +30,7 @@
       },
       "StarterCharacterScripts": {
         "$className": "StarterCharacterScripts",
-        "$path": "src/StarterCharacter"
+        "$path": "src/StarterPlayer/StarterCharacterScripts"
       }
     }
   }
