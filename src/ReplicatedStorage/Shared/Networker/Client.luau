@@ -160,9 +160,55 @@ local Queue: any = {
 
 local SerdesEvent = "?"
 local SerdesThread: thread?
+Queue.Reliable[0] = table.create(256)
+Queue.Reliable[1] = table.create(256)
+function SerdesFunctions.WriteFUNCTION_DATA_ThrustRequest(Value: boolean, InvocationIdentifier: number): ()
+	-- Allocate BLOCK: 3 bytes
+	local BLOCK_START = Allocate(3)
+	buffer.writeu8(SendBuffer, BLOCK_START + 0, 0)
+	buffer.writeu8(SendBuffer, BLOCK_START + 1, InvocationIdentifier)
+	buffer.writeu8(SendBuffer, BLOCK_START + 2, Value and 1 or 0)
+end
+
+function SerdesFunctions.ReadFUNCTION_RETURN_ThrustRequest(): (boolean)
+	-- Read BLOCK: 2 bytes
+	local BLOCK_START = Read(2)
+	local Success = buffer.readu8(RecieveBuffer, BLOCK_START + 0)
+	if Success ~= 1 then
+		error("Server encountered an error.")
+	end
+	local Value = (buffer.readu8(RecieveBuffer, BLOCK_START + 1) == 1)
+	return Value
+end
+
+function SerdesFunctions.WriteFUNCTION_DATA_DescentRequest(Value: boolean, InvocationIdentifier: number): ()
+	-- Allocate BLOCK: 3 bytes
+	local BLOCK_START = Allocate(3)
+	buffer.writeu8(SendBuffer, BLOCK_START + 0, 1)
+	buffer.writeu8(SendBuffer, BLOCK_START + 1, InvocationIdentifier)
+	buffer.writeu8(SendBuffer, BLOCK_START + 2, Value and 1 or 0)
+end
+
+function SerdesFunctions.ReadFUNCTION_RETURN_DescentRequest(): (boolean)
+	-- Read BLOCK: 2 bytes
+	local BLOCK_START = Read(2)
+	local Success = buffer.readu8(RecieveBuffer, BLOCK_START + 0)
+	if Success ~= 1 then
+		error("Server encountered an error.")
+	end
+	local Value = (buffer.readu8(RecieveBuffer, BLOCK_START + 1) == 1)
+	return Value
+end
+
 if not RunService:IsRunning() then
 	local NOOP = function() end
 	local Returns = table.freeze({
+	ThrustRequest = {
+		Invoke = NOOP
+	},
+	DescentRequest = {
+		Invoke = NOOP
+	},
 	})
 	return Returns :: BLINK_EVENTS_SYMBOL
 end
@@ -205,6 +251,29 @@ Reliable.OnClientEvent:Connect(function(Buffer: buffer, Instances: {Instance})
 		-- Read BLOCK: 1 bytes
 		local BLOCK_START = Read(1)
 		local Index = buffer.readu8(RecieveBuffer, BLOCK_START + 0)
+		if Index == 0 then
+			-- Read BLOCK: 1 bytes
+			local BLOCK_START = Read(1)
+			local InvocationIdentifier = buffer.readu8(RecieveBuffer, BLOCK_START + 0)
+				local Success, ReturnValue = pcall(function ()
+					return SerdesFunctions.ReadFUNCTION_RETURN_ThrustRequest()
+				end)
+			if Calls[InvocationIdentifier] ~= nil then
+				task.spawn(Calls[InvocationIdentifier], Success, ReturnValue)
+				Calls[InvocationIdentifier] = nil
+			end
+		elseif Index == 1 then
+			-- Read BLOCK: 1 bytes
+			local BLOCK_START = Read(1)
+			local InvocationIdentifier = buffer.readu8(RecieveBuffer, BLOCK_START + 0)
+				local Success, ReturnValue = pcall(function ()
+					return SerdesFunctions.ReadFUNCTION_RETURN_DescentRequest()
+				end)
+			if Calls[InvocationIdentifier] ~= nil then
+				task.spawn(Calls[InvocationIdentifier], Success, ReturnValue)
+				Calls[InvocationIdentifier] = nil
+			end
+		end
 	end
 end)
 Unreliable.OnClientEvent:Connect(function(Buffer: buffer, Instances: {Instance})
@@ -229,6 +298,38 @@ end)
 local Returns = table.freeze({
 	StepReplication = StepReplication,
 
+	ThrustRequest = {
+		Invoke = function(Value: boolean): (boolean)
+			local InvocationIdentifier = Invoke()
+			if Calls[InvocationIdentifier] ~= nil then
+				Invocations -= 1
+				error("More than 256 calls are awaiting a response, this packet has been dropped.")
+			end
+			SerdesFunctions.WriteFUNCTION_DATA_ThrustRequest(Value, InvocationIdentifier)
+			Calls[InvocationIdentifier] = coroutine.running()
+			local Success, ReturnValue: boolean = coroutine.yield()
+			if Success ~= true then
+				error("There was an exception while processing \"ThrustRequest\".")
+			end
+			return ReturnValue
+		end
+	},
+	DescentRequest = {
+		Invoke = function(Value: boolean): (boolean)
+			local InvocationIdentifier = Invoke()
+			if Calls[InvocationIdentifier] ~= nil then
+				Invocations -= 1
+				error("More than 256 calls are awaiting a response, this packet has been dropped.")
+			end
+			SerdesFunctions.WriteFUNCTION_DATA_DescentRequest(Value, InvocationIdentifier)
+			Calls[InvocationIdentifier] = coroutine.running()
+			local Success, ReturnValue: boolean = coroutine.yield()
+			if Success ~= true then
+				error("There was an exception while processing \"DescentRequest\".")
+			end
+			return ReturnValue
+		end
+	},
 })
 type BLINK_EVENTS_SYMBOL = typeof(Returns)
 return Returns :: BLINK_EVENTS_SYMBOL

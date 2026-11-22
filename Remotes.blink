@@ -3,3 +3,14 @@
 option ClientOutput = "src/ReplicatedStorage/Shared/Networker/Client.luau"
 option ServerOutput = "src/ServerScriptService/Networker/Server.luau"
 
+function ThrustRequest {
+    Yield: Coroutine,
+    Data: boolean,
+    Return: boolean
+}
+
+function DescentRequest {
+    Yield: Coroutine,
+    Data: boolean,
+    Return: boolean
+}

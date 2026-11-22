@@ -161,9 +161,49 @@ local Queue: any = {
 
 local SerdesEvent = "?"
 local SerdesThread: thread?
+Queue.Reliable[0] = table.create(256)
+Queue.Reliable[1] = table.create(256)
+function SerdesFunctions.ReadFUNCTION_DATA_ThrustRequest(): (boolean)
+	-- Read BLOCK: 1 bytes
+	local BLOCK_START = Read(1)
+	local Value = (buffer.readu8(RecieveBuffer, BLOCK_START + 0) == 1)
+	return Value
+end
+
+function SerdesFunctions.WriteFUNCTION_RETURN_ThrustRequest(Value: boolean, InvocationIdentifier: number): ()
+	-- Allocate BLOCK: 4 bytes
+	local BLOCK_START = Allocate(4)
+	buffer.writeu8(SendBuffer, BLOCK_START + 0, 0)
+	buffer.writeu8(SendBuffer, BLOCK_START + 1, InvocationIdentifier)
+	buffer.writeu8(SendBuffer, BLOCK_START + 2, 1)
+	buffer.writeu8(SendBuffer, BLOCK_START + 3, Value and 1 or 0)
+end
+
+function SerdesFunctions.ReadFUNCTION_DATA_DescentRequest(): (boolean)
+	-- Read BLOCK: 1 bytes
+	local BLOCK_START = Read(1)
+	local Value = (buffer.readu8(RecieveBuffer, BLOCK_START + 0) == 1)
+	return Value
+end
+
+function SerdesFunctions.WriteFUNCTION_RETURN_DescentRequest(Value: boolean, InvocationIdentifier: number): ()
+	-- Allocate BLOCK: 4 bytes
+	local BLOCK_START = Allocate(4)
+	buffer.writeu8(SendBuffer, BLOCK_START + 0, 1)
+	buffer.writeu8(SendBuffer, BLOCK_START + 1, InvocationIdentifier)
+	buffer.writeu8(SendBuffer, BLOCK_START + 2, 1)
+	buffer.writeu8(SendBuffer, BLOCK_START + 3, Value and 1 or 0)
+end
+
 if not RunService:IsRunning() then
 	local NOOP = function() end
 	local Returns = table.freeze({
+	ThrustRequest = {
+		On = NOOP
+	},
+	DescentRequest = {
+		On = NOOP
+	},
 	})
 	return Returns :: BLINK_EVENTS_SYMBOL
 end
@@ -226,6 +266,33 @@ Reliable.OnServerEvent:Connect(function(Player: Player, Buffer: buffer, Instance
 		-- Read BLOCK: 1 bytes
 		local BLOCK_START = Read(1)
 		local Index = buffer.readu8(RecieveBuffer, BLOCK_START + 0)
+		if Index == 0 then
+			-- Read BLOCK: 1 bytes
+			local BLOCK_START = Read(1)
+			local InvocationIdentifier = buffer.readu8(RecieveBuffer, BLOCK_START + 0)
+			local Value: boolean = SerdesFunctions.ReadFUNCTION_DATA_ThrustRequest()
+			if Events.Reliable[0] ~= nil then
+				task.spawn(Events.Reliable[0], Player, Value, InvocationIdentifier)
+			else
+				if #Queue.Reliable[0] > 256 then
+					warn("[Blink]: Event queue of \"ThrustRequest\" exceeded 256, did you forget to implement a listener?")
+				end
+				table.insert(Queue.Reliable[0], {Player, Value, InvocationIdentifier} :: {any})
+			end
+		elseif Index == 1 then
+			-- Read BLOCK: 1 bytes
+			local BLOCK_START = Read(1)
+			local InvocationIdentifier = buffer.readu8(RecieveBuffer, BLOCK_START + 0)
+			local Value: boolean = SerdesFunctions.ReadFUNCTION_DATA_DescentRequest()
+			if Events.Reliable[1] ~= nil then
+				task.spawn(Events.Reliable[1], Player, Value, InvocationIdentifier)
+			else
+				if #Queue.Reliable[1] > 256 then
+					warn("[Blink]: Event queue of \"DescentRequest\" exceeded 256, did you forget to implement a listener?")
+				end
+				table.insert(Queue.Reliable[1], {Player, Value, InvocationIdentifier} :: {any})
+			end
+		end
 	end
 end)
 Unreliable.OnServerEvent:Connect(function(Player: Player, Buffer: buffer, Instances: {Instance})
@@ -250,6 +317,62 @@ end)
 local Returns = table.freeze({
 	StepReplication = StepReplication,
 
+	ThrustRequest = {
+		On = function(Listener: (Player, boolean) -> (boolean)): ()
+			Events.Reliable[0] = function(Player: Player, Value: boolean, InvocationIdentifier: number): ()
+				local ReturnValue: boolean;
+				local Success, Error = pcall(function ()
+					ReturnValue = Listener(Player, Value)
+				end)
+				Load(PlayersMap[Player])
+				if Success ~= true then
+					local Position = Allocate(3)
+					buffer.writeu8(SendBuffer, Position, 0)
+					buffer.writeu8(SendBuffer, Position + 1, InvocationIdentifier)
+					buffer.writeu8(SendBuffer, Position + 2, 0)
+					warn(`"ThrustRequest" encountered an error, {Error}`)
+				else
+					SerdesFunctions.WriteFUNCTION_RETURN_ThrustRequest(ReturnValue, InvocationIdentifier)
+				end
+				PlayersMap[Player] = Save()
+			end
+			task.spawn(function (): ()
+				local EventQueue = Queue.Reliable[0] or {}
+				Queue.Reliable[0] = nil
+				for Index, Arguments in EventQueue do
+					Events.Reliable[0](table.unpack(Arguments))
+				end
+			end)
+		end
+	},
+	DescentRequest = {
+		On = function(Listener: (Player, boolean) -> (boolean)): ()
+			Events.Reliable[1] = function(Player: Player, Value: boolean, InvocationIdentifier: number): ()
+				local ReturnValue: boolean;
+				local Success, Error = pcall(function ()
+					ReturnValue = Listener(Player, Value)
+				end)
+				Load(PlayersMap[Player])
+				if Success ~= true then
+					local Position = Allocate(3)
+					buffer.writeu8(SendBuffer, Position, 1)
+					buffer.writeu8(SendBuffer, Position + 1, InvocationIdentifier)
+					buffer.writeu8(SendBuffer, Position + 2, 0)
+					warn(`"DescentRequest" encountered an error, {Error}`)
+				else
+					SerdesFunctions.WriteFUNCTION_RETURN_DescentRequest(ReturnValue, InvocationIdentifier)
+				end
+				PlayersMap[Player] = Save()
+			end
+			task.spawn(function (): ()
+				local EventQueue = Queue.Reliable[1] or {}
+				Queue.Reliable[1] = nil
+				for Index, Arguments in EventQueue do
+					Events.Reliable[1](table.unpack(Arguments))
+				end
+			end)
+		end
+	},
 })
 type BLINK_EVENTS_SYMBOL = typeof(Returns)
 return Returns :: BLINK_EVENTS_SYMBOL

@@ -7,7 +7,7 @@
 
 -- Add controllers here in the order they should initialize, e.g.
 --   ReplicatedStorage.Client.UI.UIController
-local CONTROLLERS: { ModuleScript } = {}
+local CONTROLLERS: { ModuleScript } = { game.ReplicatedStorage.Client.FlightController }
 
 type Controller = {
 	Init: (() -> ())?,

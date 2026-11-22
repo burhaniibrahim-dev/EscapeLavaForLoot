@@ -7,7 +7,10 @@
 
 -- Add services here in the order they should initialize, e.g.
 --   ServerScriptService.Features.Data.PlayerDataService
-local SERVICES: { ModuleScript } = {}
+
+local Features = game.ServerScriptService.Features
+
+local SERVICES: { ModuleScript } = {Features.FlightService}
 
 type Service = {
 	Init: (() -> ())?,
